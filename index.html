@@ -96,7 +96,6 @@
       function splitConnection (connection) {
         const cacheKey = connection.from.id + '|' + connection.to.id
         let node = hiddenNodeCache[cacheKey]
-        console.log('splitConnection', cacheKey, node && node.id)
         if (!node) {
           node = new HiddenNode()
           hiddenNodeCache[cacheKey] = node
@@ -188,9 +187,8 @@
             if (myGenome[i] && otherGenome[i]) {
               newGene = Math.random() < 0.75 ? myGenome[i].duplicate() : otherGenome[i].duplicate()
             } else if (myGenome[i]) {
+              // excess and disjoint are only inherited from the fittest parent
               newGene = myGenome[i].duplicate()
-            } else if (otherGenome[i]) {
-              newGene = otherGenome[i].duplicate()
             } else
               continue
             newGenome[i] = newGene
@@ -482,12 +480,12 @@
           paper.clear()
           const chartOpts = {
             axis: '0 0 1 1',
-            symbol: 'circle',
-            colors: ['darkgreen'],
+            // symbol: 'circle',
+            colors: ['darkblue'],
             smooth: true
           }
           const res = paper.linechart(30, 0, 400, 180, [...generationScore.keys()], generationScore, chartOpts).attr({
-            stroke: 'darkgreen'
+            stroke: 'darkblue'
           })
           const [forwards, backwards] = computeGraphs(genome.connections, true)
           const {orderedNodes, nodeLayers} = topologicalSort(nnInputs, backwards, forwards)
@@ -625,6 +623,8 @@
         </tr>
         </tbody>
     </table>
+    <span style="color: darkgray">The blue graph shows best lifetime vs generation.<br> best NN of the previous
+        generation is shown superimposed.</span>
 </div>
 
 <div id="canvas"
