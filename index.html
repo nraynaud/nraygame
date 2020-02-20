@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta name="viewport" content="width=device-width">
-    <title>Nray game</title>
+    <title>Nraynaud game</title>
     <style>
         table, th, td {
             color: wheat;
@@ -14,18 +14,18 @@
 <body>
 <div>
     <script src="https://cdn.jsdelivr.net/npm/planck-js@0.2/dist/planck-with-testbed.js"></script>
-    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.2.1/raphael.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.2.1/raphael.js"></script>
     <script src="g.raphael.js"></script>
     <script src="g.line.js"></script>
-    <script type="text/javascript"
-            src="https://cdnjs.cloudflare.com/ajax/libs/graphdracula/1.0.3/dracula.min.js"></script>
+    <script src="graph.js"></script>
     <script>
-      const FLOCK_SIZE = 300
+      const FLOCK_SIZE = 100
       const RESUSCITATION_RATIO = 0.1
       const TOPO_MUTATION_PROB = 0.1
       const ADD_NODE_MUTATION_PROB = 0.05
       const WEIGHT_MUTATION_PROB = 0.1
-      const CONNECTION_TOGGLE_PROB = 0.05
+      const WEIGHT_REPLACEMENT_PROB = 0.001
+      const CONNECTION_TOGGLE_PROB = 0.005
 
       const RESUSCITATION_COUNT = Math.floor(RESUSCITATION_RATIO * FLOCK_SIZE)
     </script>
@@ -36,6 +36,10 @@
         while (u === 0) u = Math.random() //Converting [0,1) to (0,1)
         while (v === 0) v = Math.random()
         return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v)
+      }
+
+      function randomWeight () {
+        return Math.random() * 2 - 1
       }
 
       let nextInnovation = 0
@@ -50,18 +54,13 @@
       const nodeArray = {}
 
       class ConnectionGene {
-        #_innovation
-        #_from
-        #_to
-        weight
-        enabled
 
         constructor (innovation, from, to, weight, enabled) {
-          this.weight = weight
           this._from = from
           this._to = to
           this._innovation = innovation
           this.enabled = enabled
+          this._weight = weight
         }
 
         get from () {
@@ -76,12 +75,23 @@
           return this._innovation
         }
 
+        get weight () {
+          return this._weight
+        }
+
+        set weight (value) {
+          const MAX_WEIGHT = 100
+          if (Math.abs(value) > MAX_WEIGHT)
+            value = Math.sign(value) * MAX_WEIGHT
+          this._weight = value
+        }
+
         duplicate (weight = this.weight, enabled = this.enabled) {
           return new ConnectionGene(this.innovation, this.from, this.to, weight, enabled)
         }
       }
 
-      function createConnectionGene (from, to, weight = Math.random(), enabled = true) {
+      function addConnection (from, to, weight = randomWeight(), enabled = true) {
         const cacheKey = from.id + '|' + to.id
         let connectionGene = connectionGeneCache[cacheKey]
         if (connectionGene) {
@@ -97,12 +107,12 @@
         const cacheKey = connection.from.id + '|' + connection.to.id
         let node = hiddenNodeCache[cacheKey]
         if (!node) {
-          node = new HiddenNode()
+          node = new Node('hidden')
           hiddenNodeCache[cacheKey] = node
         }
         connection.enabled = false
-        const previousConnection = createConnectionGene(connection.from, node, 1, true)
-        const nextConnection = createConnectionGene(node, connection.to, connection.weight, true)
+        const previousConnection = addConnection(connection.from, node, 1, true)
+        const nextConnection = addConnection(node, connection.to, connection.weight, true)
         return [previousConnection, nextConnection]
       }
 
@@ -112,14 +122,12 @@
         const adjacencyList = {}
         // same as above but antecedent
         const backwardsAdjacencyList = {}
-        // adjacency connection: {nodeId->Set(outConnection1, outConnection2)}
-        const connectionAdjacency = {}
         // adjacency connection: {nodeId->Set(inConnection1, inConnection2)}
         const backwardsConnectionAdjacency = {}
 
+        const addEntry = (collection, id, value) => (collection[id] = (collection[id] || new Set()).add(value))
+
         function recordConnection (from, to, connection) {
-          const addEntry = (collection, id, value) => (collection[id] = (collection[id] || new Set()).add(value))
-          addEntry(connectionAdjacency, from.id, connection)
           addEntry(backwardsConnectionAdjacency, to.id, connection)
           addEntry(adjacencyList, from.id, to.id)
           addEntry(backwardsAdjacencyList, to.id, from.id)
@@ -129,8 +137,7 @@
           if (connection && (!enabledOnly || (connection.enabled && connection.weight !== 0)))
             recordConnection(connection.from, connection.to, connection)
         }
-
-        return [adjacencyList, backwardsAdjacencyList, connectionAdjacency, backwardsConnectionAdjacency]
+        return [adjacencyList, backwardsAdjacencyList, backwardsConnectionAdjacency]
       }
 
       // https://en.wikipedia.org/wiki/Topological_sorting
@@ -155,7 +162,7 @@
               const bucket = backAdjList[destinationNodeId]
               bucket.delete(node.id)
               const nextLayer = nodeLayers[node.id] + 1
-              nodeLayers[destinationNode.id] = nodeLayers[destinationNode.id] ? Math.max(nodeLayers[destinationNode.id], nextLayer) : nextLayer
+              nodeLayers[destinationNodeId] = nodeLayers[destinationNodeId] ? Math.max(nodeLayers[destinationNodeId], nextLayer) : nextLayer
               // backwards graph has no element towards me
               if (bucket.size === 0)
                 nodeSet.add(destinationNode)
@@ -165,8 +172,6 @@
       }
 
       class Genome {
-        connections
-
         constructor (connections) {
           this.connections = connections
         }
@@ -185,7 +190,7 @@
           for (let i = 0; i < myGenome.length; i++) {
             let newGene
             if (myGenome[i] && otherGenome[i]) {
-              newGene = Math.random() < 0.75 ? myGenome[i].duplicate() : otherGenome[i].duplicate()
+              newGene = Math.random() < 0.65 ? myGenome[i].duplicate() : otherGenome[i].duplicate()
             } else if (myGenome[i]) {
               // excess and disjoint are only inherited from the fittest parent
               newGene = myGenome[i].duplicate()
@@ -193,14 +198,15 @@
               continue
             newGenome[i] = newGene
 
-            if (Math.random() < WEIGHT_MUTATION_PROB) {
-              // weight mutation
+            // weight mutation
+            if (Math.random() < WEIGHT_MUTATION_PROB)
               newGene.weight = (newGene.weight + Math.random() / 100) * ((Math.random() - 0.5) * 10)
-            }
-            if (Math.random() < CONNECTION_TOGGLE_PROB) {
-              // activation mutation
+            // completely new weight mutation
+            if (Math.random() < WEIGHT_REPLACEMENT_PROB)
+              newGene.weight = randomWeight()
+            // activation mutation
+            if (Math.random() < CONNECTION_TOGGLE_PROB)
               newGene.enabled = !newGene.enabled
-            }
           }
           // predicates force empty gene to get a first link
           if (Math.random() < TOPO_MUTATION_PROB || newGenome.length === 0) {
@@ -224,19 +230,18 @@
                 const [forwards, backwards] = computeGraphs(Object.values(connectionGeneCache), false)
                 const {nodeLayers} = topologicalSort(nnInputs, backwards, forwards)
                 const activeConnections = [...newGenome.filter(g => g != null && g.enabled)]
-                // all the nodes appearing the genome
+                // all the appearing in this genome
                 const graphNodes = new Set([...activeConnections.map(c => c.from), ...activeConnections.map(c => c.to)])
-                const selectableStartNodes = [...graphNodes, ...nnInputs].filter(n => !(n instanceof OutputNode))
+                const selectableStartNodes = [...graphNodes, ...nnInputs].filter(n => n.type !== 'output')
                 const startNode = selectableStartNodes[Math.floor(Math.random() * selectableStartNodes.length)]
                 const startNodeLayer = nodeLayers[startNode.id]
-                const destinationFilter = k => nodeArray[k] instanceof OutputNode || k !== startNode.id && nodeLayers[k] > 0 && nodeLayers[k] >= startNodeLayer
-                const candidateDestinationNodeIds = new Set([...nodeLayers.keys(), ...nnOutputs.map(n => n.id)].filter(destinationFilter))
                 // ensure outputs are selectable
-                for (const o of nnOutputs)
-                  candidateDestinationNodeIds.add(o.id)
+                const destinationFilter = k => nodeArray[k].type === 'output'
+                  || k !== startNode.id && nodeLayers[k] > 0 && nodeLayers[k] >= startNodeLayer
+                const candidateDestinationNodeIds = new Set([...nodeLayers.keys(), ...nnOutputs.map(n => n.id)].filter(destinationFilter))
                 const selectedNodeId = [...candidateDestinationNodeIds][Math.floor(Math.random() * candidateDestinationNodeIds.size)]
                 const destination = nodeArray[selectedNodeId]
-                const conn = createConnectionGene(startNode, destination)
+                const conn = addConnection(startNode, destination)
                 newGenome[conn.innovation] = conn
               }
             }
@@ -247,7 +252,11 @@
         }
 
         getEvaluator () {
-          const [adjacencyList, backwardsAdjacencyList, _connectionAdjacency, backwardsConnectionAdjacency] = computeGraphs(this.connections)
+          function sigmoid (t) {
+            return 1 / (1 + Math.pow(Math.E, -t))
+          }
+
+          const [adjacencyList, backwardsAdjacencyList, backwardsConnectionAdjacency] = computeGraphs(this.connections)
           const sortedNodes = topologicalSort(nnInputs, backwardsAdjacencyList, adjacencyList).orderedNodes
           // the value at the exit of the neurone
           const nodeValues = new Array(nextNodeId + 1).fill(0)
@@ -256,7 +265,7 @@
               nodeValues[node.id] = node.grabValue(bird, pipeList)
             }
             for (const node of sortedNodes) {
-              if (!(node instanceof InputNode)) {
+              if (node.type !== 'input') {
                 let val = 0
                 for (const connection of backwardsConnectionAdjacency[node.id])
                   val += nodeValues[connection.from.id] * connection.weight
@@ -268,40 +277,26 @@
         }
       }
 
-      class HiddenNode {
-        id = nextNodeId++
-
-        constructor () {
+      class Node {
+        constructor (type, name) {
+          this.id = nextNodeId++
           nodeArray[this.id] = this
-        }
-
-        toString () {
-          return '{' + this.id + '}'
-        }
-      }
-
-      class OutputNode {
-        id = nextNodeId++
-
-        constructor () {
-          nodeArray[this.id] = this
-        }
-
-        toString () {
-          return '{OUT}'
+          this.type = type
+          this.display = name ? `{${name}}` : `{${this.id}}`
         }
       }
 
       class InputNode {
-        id = nextNodeId++
-
         constructor (name) {
+          this.id = nextNodeId++
           nodeArray[this.id] = this
           this.name = name
+          this.type = 'input'
+          this.display = '{' + this.name + '}'
         }
 
         toString () {
-          return '{' + this.name + '}'
+          return
         }
       }
 
@@ -316,14 +311,14 @@
           ['bias', (_bird, _pipeList) => 1]
         ]
         return inputs.map(input => {
-          const node = new InputNode(input[0])
+          const node = new Node('input', input[0])
           node.grabValue = input[1]
           return node
         })
       }
 
       const nnInputs = createNNInputNodes()
-      const nnOutputs = [new OutputNode()]
+      const nnOutputs = [new Node('output', 'OUT')]
 
       planck.testbed('Bird', function (testbed) {
         testbed.speed = 5
@@ -362,6 +357,8 @@
         })
 
         function createBird (genome) {
+          // bird starts at a random height
+          const posY = randomGauss() * 4
           const bird = world.createBody({type: 'dynamic', position: V2(2, 5)})
           bird.createFixture({
             shape: planck.Circle(V2(0, 0), 2),
@@ -369,9 +366,9 @@
           })
           bird.render = {fill: 'orange', stroke: 'black'}
           // for a bird completely at the left
-          // bird.setPosition(V2(-45.5, 0))
+          //bird.setPosition(V2(-45.5, posY))
           // leave a gap behind the bird, forces it to read the position of the 2nd pipe
-          bird.setPosition(V2(-25, 0))
+          bird.setPosition(V2(-25, posY))
           bird.isBird = true
           bird.up = function () {
             if (height / 2 > this.getWorldCenter().y) {
@@ -388,21 +385,14 @@
         }
 
         const birds = []
+        const initialGenenome = [...nnInputs.map(i => addConnection(i, nnOutputs[0]))]
         // initial flock
         for (let i = 0; i < FLOCK_SIZE; i++) {
-          let genome = new Genome([])
-          let bird = createBird(genome.combine(genome))
+          let genome = new Genome(initialGenenome)
+          let bird = createBird(genome)
           bird.index = i
           birds.push(bird)
         }
-
-        /*
-        // manual control
-        birds[0].policy = function () {
-          if (testbed.activeKeys.up) {
-            this.up()
-          }
-        }*/
 
         // the front of the pipe is slightly bent towards the hole to give an advantage to the birds crashing closer
         // to the gap
@@ -474,56 +464,10 @@
           return array.find(v => v[0] > drawnValue)[1]
         }
 
-        const paper = Raphael('canvas')
+        const raphaelPaper = Raphael('canvas')
 
         function displayBest (genome, generationScore) {
-          paper.clear()
-          const chartOpts = {
-            axis: '0 0 1 1',
-            // symbol: 'circle',
-            colors: ['darkblue'],
-            smooth: true
-          }
-          const res = paper.linechart(30, 0, 400, 180, [...generationScore.keys()], generationScore, chartOpts).attr({
-            stroke: 'darkblue'
-          })
-          const [forwards, backwards] = computeGraphs(genome.connections, true)
-          const {orderedNodes, nodeLayers} = topologicalSort(nnInputs, backwards, forwards)
-          const maxLayer = nodeLayers[orderedNodes[orderedNodes.length - 1].id]
-          const layerInc = 400 / maxLayer
-          let currentLayer = 0
-          let currentY = 0
-          const nodePositions = []
-          for (const node of orderedNodes) {
-            const layer = nodeLayers[node.id]
-            if (currentLayer !== layer) {
-              currentLayer = layer
-              currentY = 0
-            }
-            nodePositions[node.id] = {x: layer * layerInc, y: currentY}
-            currentY += 20
-          }
-          for (const node of orderedNodes) {
-            const pos = nodePositions[node.id]
-            const text = paper.text(100 + pos.x, 20 + pos.y, nodeArray[node.id].toString()).attr({
-              'stroke': 'wheat',
-              fill: 'wheat'
-            })
-            if (node instanceof InputNode)
-              text.attr({'text-anchor': 'end'})
-            if (node instanceof OutputNode)
-              text.attr({'text-anchor': 'start', 'font-size': '15', stroke: 'red', fill: 'red'})
-            if (node instanceof HiddenNode)
-              text.attr({'font-size': '15', stroke: '#F88', fill: '#F88'})
-          }
-          for (const connection of genome.connections) {
-            const pos1 = nodePositions[connection.from.id]
-            const pos2 = nodePositions[connection.to.id]
-            if (connection.enabled && pos1 && pos2) {
-              paper.path(`M${105 + pos1.x},${20 + pos1.y}L${90 + pos2.x},${20 + pos2.y}`).attr('stroke', 'grey')
-              paper.text((150 + pos1.x + 50 + pos2.x) / 1.8, (20 + pos1.y + 20 + pos2.y) / 1.8, '' + connection.weight.toFixed(1)).attr('stroke', 'wheat')
-            }
-          }
+          displayGraph(raphaelPaper, genome, generationScore)
         }
 
         function resetSimulation () {
@@ -555,18 +499,18 @@
           globalTime = 0
         }
 
+        const kill = bird => {
+          if (!bird.isDead) {
+            bird.isDead = true
+            bird.lifeTime = globalTime
+            birds.splice(birds.indexOf(bird), 1)
+            justDiedBirds.push(bird)
+            graveyard.push(bird)
+          }
+        }
         world.on('begin-contact', function (contact) {
           const fixtureA = contact.getFixtureA()
           const fixtureB = contact.getFixtureB()
-          const kill = bird => {
-            if (!bird.isDead) {
-              bird.isDead = true
-              bird.lifeTime = globalTime
-              birds.splice(birds.indexOf(bird), 1)
-              justDiedBirds.push(bird)
-              graveyard.push(bird)
-            }
-          }
           if (fixtureA.getBody().isBird) {
             kill(fixtureA.getBody())
           } else if (fixtureB.getBody().isBird)
@@ -591,8 +535,7 @@
           } else {
             for (const bird of birds) {
               bird.policy()
-              const v = bird.getLinearVelocity()
-              bird.setAngle(Math.sign(v.y) * Math.PI / 12)
+              bird.setAngle(Math.sign(bird.getLinearVelocity().y) * Math.PI / 12)
             }
             if (pipeList.length && isPipeGoneLeft(pipeList[0]))
               world.destroyBody(pipeList.shift())
@@ -610,9 +553,9 @@
     <table>
         <thead>
         <tr>
-            <th>Time</th>
-            <th>Flock size</th>
-            <th>Generation</th>
+            <th style="width: 5em">Time</th>
+            <th style="width: 5em">Flock size</th>
+            <th style="width: 5em">Generation</th>
         </tr>
         </thead>
         <tbody>
