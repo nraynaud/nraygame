@@ -1,5 +1,4 @@
-
-function displayGraph(paper, genome, generationScore) {
+function displayGraph (paper, genome, generationScore) {
   paper.clear()
   const chartOpts = {
     axis: '0 0 1 1',
@@ -31,8 +30,8 @@ function displayGraph(paper, genome, generationScore) {
       fill: 'wheat'
     })
     const style = {
-      hidden:{'font-size': '15', stroke: '#F88', fill: '#F88'},
-      output:{'text-anchor': 'start', 'font-size': '15', stroke: 'red', fill: 'red'},
+      hidden: {'font-size': '15', stroke: '#F88', fill: '#F88'},
+      output: {'text-anchor': 'start', 'font-size': '15', stroke: 'red', fill: 'red'},
       input: {'text-anchor': 'end'}
     }[node.type]
     text.attr(style)

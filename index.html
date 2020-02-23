@@ -18,8 +18,10 @@
     <script src="g.raphael.js"></script>
     <script src="g.line.js"></script>
     <script src="graph.js"></script>
+    <script src="species.js"></script>
     <script>
-      const FLOCK_SIZE = 100
+      const FLOCK_SIZE = 300
+      const SPECIES_COUNT = 10
       const RESUSCITATION_RATIO = 0.1
       const TOPO_MUTATION_PROB = 0.1
       const ADD_NODE_MUTATION_PROB = 0.05
@@ -28,6 +30,11 @@
       const CONNECTION_TOGGLE_PROB = 0.005
 
       const RESUSCITATION_COUNT = Math.floor(RESUSCITATION_RATIO * FLOCK_SIZE)
+
+      //species
+      const C1 = 1
+      const C2 = 1
+      const C3 = 0.4
     </script>
     <script>
       // https://stackoverflow.com/a/49434653/72637
@@ -176,14 +183,18 @@
           this.connections = connections
         }
 
-        // can also be used with same genome for spontaneous mutations
-        combine (inferiorGenome) {
+        // innovation -> gene pseudo map
+        get innovationGenome () {
           const myGenome = []
-          const otherGenome = []
           for (const conn of this.connections)
             myGenome[conn.innovation] = conn
-          for (const conn of inferiorGenome.connections)
-            otherGenome[conn.innovation] = conn
+          return myGenome
+        }
+
+        // can also be used with same genome for spontaneous mutations
+        combine (inferiorGenome) {
+          const myGenome = this.innovationGenome
+          const otherGenome = inferiorGenome.innovationGenome
           // innovation -> gene pseudo map
           const newGenome = []
           // mate_random
@@ -286,20 +297,6 @@
         }
       }
 
-      class InputNode {
-        constructor (name) {
-          this.id = nextNodeId++
-          nodeArray[this.id] = this
-          this.name = name
-          this.type = 'input'
-          this.display = '{' + this.name + '}'
-        }
-
-        toString () {
-          return
-        }
-      }
-
       function createNNInputNodes () {
         const inputs = [
           ['birdY', (bird, _pipeList) => bird.getWorldCenter().y],
@@ -385,10 +382,10 @@
         }
 
         const birds = []
-        const initialGenenome = [...nnInputs.map(i => addConnection(i, nnOutputs[0]))]
         // initial flock
         for (let i = 0; i < FLOCK_SIZE; i++) {
-          let genome = new Genome(initialGenenome)
+          // the same genome is rebuilt every time to generate different weights
+          let genome = new Genome([...nnInputs.map(i => addConnection(i, nnOutputs[0]))])
           let bird = createBird(genome)
           bird.index = i
           birds.push(bird)
@@ -470,26 +467,30 @@
           displayGraph(raphaelPaper, genome, generationScore)
         }
 
+        let species = selectInitialCentroids(SPECIES_COUNT, birds.map(b => b.genome))
+
         function resetSimulation () {
           generationDisplay.innerText = '' + generation
           graveyard.sort((a, b) => b.lifeTime - a.lifeTime)
-          let sumLifetimes = 0
-          const birdsByLifetime = graveyard.map((b) => [sumLifetimes += b.lifeTime * b.lifeTime, b])
+          let {clusters, centroids, newSizes} = kMeans(graveyard, species)
+          species = centroids
           generationScore[generation - 1] = graveyard[0].lifeTime
           displayBest(graveyard[0].genome, generationScore)
-          for (let i = 0; i < RESUSCITATION_COUNT; i++) {
-            const newBird = createBird(graveyard[i].genome)
-            newBird.index = birds.length
-            birds.push(newBird)
-          }
-          while (birds.length < FLOCK_SIZE) {
-            const parent1 = pickWeighted(sumLifetimes, birdsByLifetime)
-            const parent2 = pickWeighted(sumLifetimes, birdsByLifetime)
-            const parents = [parent1, parent2]
-            parents.sort((p1, p2) => p2.lifeTime - p1.lifeTime)
-            const newBird = createBird(parents[0].genome.combine(parents[1].genome))
-            newBird.index = birds.length
-            birds.push(newBird)
+          const newBirds = newSizes.map(s=>[])
+          for (let i = 0; i < SPECIES_COUNT; i++) {
+            const previousMembers = clusters[i]
+            let sumLifetimes = 0
+            const birdsByLifetime = previousMembers.map((b) => [sumLifetimes += b.lifeTime * b.lifeTime, b])
+            while (newBirds[i].length < newSizes[i]) {
+              const parent1 = pickWeighted(sumLifetimes, birdsByLifetime)
+              const parent2 = pickWeighted(sumLifetimes, birdsByLifetime)
+              const parents = [parent1, parent2]
+              parents.sort((p1, p2) => p2.lifeTime - p1.lifeTime)
+              const newBird = createBird(parents[0].genome.combine(parents[1].genome))
+              newBird.index = birds.length
+              newBirds[i].push(newBird)
+              birds.push(newBird)
+            }
           }
           for (const pipe of pipeList)
             world.destroyBody(pipe)
