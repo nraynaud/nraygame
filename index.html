@@ -25,6 +25,7 @@
       const TOPO_MUTATION_PROB = 0.1
       const ADD_NODE_MUTATION_PROB = 0.05
       const WEIGHT_MUTATION_PROB = 0.1
+      const WEIGHT_MUTATION_POWER = 0.1
       const WEIGHT_REPLACEMENT_PROB = 0.001
       const CONNECTION_TOGGLE_PROB = 0.005
 
@@ -35,15 +36,15 @@
     </script>
     <script>
       // https://stackoverflow.com/a/49434653/72637
-      function randomGauss () {
+      function randomGauss (mu = 0, sigma = 1) {
         let u = 0, v = 0
         while (u === 0) u = Math.random() //Converting [0,1) to (0,1)
         while (v === 0) v = Math.random()
-        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v)
+        return mu + sigma * Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v)
       }
 
       function randomWeight () {
-        return Math.random() * 2 - 1
+        return randomGauss()
       }
 
       let nextInnovation = 0
@@ -208,7 +209,7 @@
 
             // weight mutation
             if (Math.random() < WEIGHT_MUTATION_PROB)
-              newGene.weight = (newGene.weight + Math.random() / 100) * ((Math.random() - 0.5) * 10)
+              newGene.weight = newGene.weight + randomGauss(0, WEIGHT_MUTATION_POWER)
             // completely new weight mutation
             if (Math.random() < WEIGHT_REPLACEMENT_PROB)
               newGene.weight = randomWeight()
@@ -277,7 +278,7 @@
                 let val = 0
                 for (const connection of backwardsConnectionAdjacency[node.id])
                   val += nodeValues[connection.from.id] * connection.weight
-                nodeValues[node.id] = Math.tanh(val)
+                nodeValues[node.id] = sigmoid(val)
               }
             }
             return nnOutputs.map(n => nodeValues[n.id])
@@ -312,7 +313,7 @@
       }
 
       const nnInputs = createNNInputNodes()
-      const nnOutputs = [new Node('output', 'OUT')]
+      const nnOutputs = [new Node('output', 'JUMP'), new Node('output', 'STAY')]
 
       planck.testbed('Bird', function (testbed) {
         testbed.speed = 5
@@ -360,9 +361,9 @@
           })
           bird.render = {fill: 'orange', stroke: 'black'}
           // for a bird completely at the left
-          //bird.setPosition(V2(-45.5, posY))
+          bird.setPosition(V2(-45.5, posY))
           // leave a gap behind the bird, forces it to read the position of the 2nd pipe
-          bird.setPosition(V2(-25, posY))
+          //bird.setPosition(V2(-25, posY))
           bird.isBird = true
           bird.up = function () {
             if (height / 2 > this.getWorldCenter().y) {
@@ -372,7 +373,8 @@
           bird.genome = genome
           const evaluator = genome.getEvaluator()
           bird.policy = function () {
-            if ((evaluator(bird, pipeList))[0] > 0.85)
+            let value = evaluator(bird, pipeList)
+            if (value[0] > value[1])
               this.up()
           }
           return bird
@@ -382,7 +384,11 @@
         // initial flock
         for (let i = 0; i < FLOCK_SIZE; i++) {
           // the same genome is rebuilt every time to generate different weights
-          let genome = new Genome([...nnInputs.map(i => addConnection(i, nnOutputs[0]))])
+          let connections = []
+          for (const o of nnOutputs)
+            for (const i of nnInputs)
+              connections.push(addConnection(i, o))
+          let genome = new Genome(connections)
           let bird = createBird(genome)
           bird.index = i
           birds.push(bird)
