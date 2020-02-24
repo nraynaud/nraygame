@@ -361,9 +361,9 @@
           })
           bird.render = {fill: 'orange', stroke: 'black'}
           // for a bird completely at the left
-          bird.setPosition(V2(-45.5, posY))
+          //bird.setPosition(V2(-45.5, posY))
           // leave a gap behind the bird, forces it to read the position of the 2nd pipe
-          //bird.setPosition(V2(-25, posY))
+          bird.setPosition(V2(-25, posY))
           bird.isBird = true
           bird.up = function () {
             if (height / 2 > this.getWorldCenter().y) {
