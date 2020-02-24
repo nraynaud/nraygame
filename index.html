@@ -22,14 +22,11 @@
     <script>
       const FLOCK_SIZE = 300
       const SPECIES_COUNT = 10
-      const RESUSCITATION_RATIO = 0.1
       const TOPO_MUTATION_PROB = 0.1
       const ADD_NODE_MUTATION_PROB = 0.05
       const WEIGHT_MUTATION_PROB = 0.1
       const WEIGHT_REPLACEMENT_PROB = 0.001
       const CONNECTION_TOGGLE_PROB = 0.005
-
-      const RESUSCITATION_COUNT = Math.floor(RESUSCITATION_RATIO * FLOCK_SIZE)
 
       //species
       const C1 = 1
@@ -241,7 +238,7 @@
                 const [forwards, backwards] = computeGraphs(Object.values(connectionGeneCache), false)
                 const {nodeLayers} = topologicalSort(nnInputs, backwards, forwards)
                 const activeConnections = [...newGenome.filter(g => g != null && g.enabled)]
-                // all the appearing in this genome
+                // all the nodes appearing in this genome
                 const graphNodes = new Set([...activeConnections.map(c => c.from), ...activeConnections.map(c => c.to)])
                 const selectableStartNodes = [...graphNodes, ...nnInputs].filter(n => n.type !== 'output')
                 const startNode = selectableStartNodes[Math.floor(Math.random() * selectableStartNodes.length)]
@@ -476,7 +473,7 @@
           species = centroids
           generationScore[generation - 1] = graveyard[0].lifeTime
           displayBest(graveyard[0].genome, generationScore)
-          const newBirds = newSizes.map(s=>[])
+          const newBirds = newSizes.map(() => [])
           for (let i = 0; i < SPECIES_COUNT; i++) {
             const previousMembers = clusters[i]
             let sumLifetimes = 0
@@ -528,8 +525,12 @@
           if (!birds.length) {
             if (justDiedBirds.length === 0 && deadBirds.length === 0) {
               generation++
-              resetSimulation()
-              //testbed.pause()
+              try {
+                resetSimulation()
+              } catch (e) {
+                testbed.pause()
+                return
+              }
             } else
               for (const currentPipe of pipeList)
                 currentPipe.setLinearVelocity(V2(0, 0))

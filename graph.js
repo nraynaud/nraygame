@@ -4,7 +4,7 @@ function displayGraph (paper, genome, generationScore) {
     axis: '0 0 1 1',
     smooth: true
   }
-  const res = paper.linechart(30, 0, 400, 180, [...generationScore.keys()], generationScore, chartOpts).attr({
+  paper.linechart(30, 0, 400, 180, [...generationScore.keys()], generationScore, chartOpts).attr({
     stroke: 'lightblue'
   })
   const [forwards, backwards] = computeGraphs(genome.connections, true)
