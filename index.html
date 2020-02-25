@@ -33,6 +33,10 @@
       const C1 = 1
       const C2 = 1
       const C3 = 0.4
+      const COLOR = ['AliceBlue', 'AntiqueWhite', 'Aqua', 'Aquamarine', 'Azure', 'Beige', 'Bisque', 'BlanchedAlmond',
+        'Blue', 'BlueViolet', 'Brown', 'BurlyWood', 'CadetBlue', 'Chartreuse', 'Chocolate', 'Coral', 'CornflowerBlue',
+        'Cornsilk', 'Crimson', 'Cyan', 'DarkBlue', 'DarkCyan', 'DarkGoldenRod', 'DarkGray', 'DarkGreen', 'DarkKhaki',
+        'DarkMagenta', 'DarkOliveGreen', 'DarkOrange', 'DarkOrchid']
     </script>
     <script>
       // https://stackoverflow.com/a/49434653/72637
@@ -220,9 +224,9 @@
           // predicates force empty gene to get a first link
           if (Math.random() < TOPO_MUTATION_PROB || newGenome.length === 0) {
             if (Math.random() < ADD_NODE_MUTATION_PROB && newGenome.length) {
-              // addNode mutation
               let activeGenes = newGenome.filter(g => g.enabled)
               if (activeGenes.length) {
+                // addNode mutation
                 let selectedGene = activeGenes[Math.floor(Math.random() * activeGenes.length)]
                 const [previousConnection, nextConnection] = splitConnection(selectedGene)
                 newGenome[previousConnection.innovation] = previousConnection
@@ -245,11 +249,10 @@
                 const startNode = selectableStartNodes[Math.floor(Math.random() * selectableStartNodes.length)]
                 const startNodeLayer = nodeLayers[startNode.id]
                 // ensure outputs are selectable
-                const destinationFilter = k => nodeArray[k].type === 'output'
-                  || k !== startNode.id && nodeLayers[k] > 0 && nodeLayers[k] >= startNodeLayer
-                const candidateDestinationNodeIds = new Set([...nodeLayers.keys(), ...nnOutputs.map(n => n.id)].filter(destinationFilter))
-                const selectedNodeId = [...candidateDestinationNodeIds][Math.floor(Math.random() * candidateDestinationNodeIds.size)]
-                const destination = nodeArray[selectedNodeId]
+                const destinationFilter = n => n.type === 'output'
+                  || n !== startNode && nodeLayers[n.id] > 0 && nodeLayers[n.id] > startNodeLayer
+                const candidateDestinationNodes = new Set([...graphNodes, ...nnOutputs].filter(destinationFilter))
+                const destination = [...candidateDestinationNodes][Math.floor(Math.random() * candidateDestinationNodes.size)]
                 const conn = addConnection(startNode, destination)
                 newGenome[conn.innovation] = conn
               }
@@ -313,7 +316,7 @@
       }
 
       const nnInputs = createNNInputNodes()
-      const nnOutputs = [new Node('output', 'JUMP'), new Node('output', 'STAY')]
+      const nnOutputs = [new Node('output', 'JUMP')]
 
       planck.testbed('Bird', function (testbed) {
         testbed.speed = 5
@@ -351,7 +354,7 @@
           isSensor: true
         })
 
-        function createBird (genome) {
+        function createBird (genome, color = 'orange') {
           // bird starts at a random height
           const posY = randomGauss() * 4
           const bird = world.createBody({type: 'dynamic', position: V2(2, 5)})
@@ -359,11 +362,17 @@
             shape: planck.Circle(V2(0, 0), 2),
             filterGroupIndex: -1,
           })
-          bird.render = {fill: 'orange', stroke: 'black'}
+          bird.render = {fill: color, stroke: 'black'}
           // for a bird completely at the left
           //bird.setPosition(V2(-45.5, posY))
           // leave a gap behind the bird, forces it to read the position of the 2nd pipe
-          bird.setPosition(V2(-25, posY))
+          // bird.setPosition(V2(-25, posY))
+          // get the bird more and more to the right over the generations
+          const ratio = Math.min(generation / 500, 1)
+          const minX = -25
+          const maxX = -45.5
+          bird.setPosition(V2(maxX - (maxX - minX) * ratio, posY))
+
           bird.isBird = true
           bird.up = function () {
             if (height / 2 > this.getWorldCenter().y) {
@@ -374,7 +383,7 @@
           const evaluator = genome.getEvaluator()
           bird.policy = function () {
             let value = evaluator(bird, pipeList)
-            if (value[0] > value[1])
+            if (value[0] > 0.5)
               this.up()
           }
           return bird
@@ -383,23 +392,35 @@
         const birds = []
         // initial flock
         for (let i = 0; i < FLOCK_SIZE; i++) {
-          // the same genome is rebuilt every time to generate different weights
+          /*
           let connections = []
           for (const o of nnOutputs)
             for (const i of nnInputs)
-              connections.push(addConnection(i, o))
-          let genome = new Genome(connections)
+              connections.push(addConnection(i, o))*/
+          let genome = new Genome([])
           let bird = createBird(genome)
           bird.index = i
           birds.push(bird)
         }
-
+        const pipeList = []
         // the front of the pipe is slightly bent towards the hole to give an advantage to the birds crashing closer
         // to the gap
         function createPipe (xPos) {
           const screenHeight = height / 2
           const openingWidth = 6// Math.max(randomGauss() * 30 + 8, 6)
           const openingHeight = Math.random() * (height - openingWidth) - screenHeight + openingWidth / 2
+          let velocity = -6 + randomGauss() / 15
+          if (pipeList.length) {
+            const previousPipe = pipeList[pipeList.length - 1]
+            const previousHeight = previousPipe.openingHeight
+            const deltaY = Math.abs(previousHeight - openingHeight)
+            const previousX = previousPipe.getWorldCenter().x
+            let safeX = previousX + deltaY
+            if (xPos < safeX) {
+              xPos = Math.max(xPos, safeX)
+              velocity = previousPipe.getLinearVelocity().x
+            }
+          }
           const pipe = world.createKinematicBody(V2(xPos, 0))
           const xSpan = 6
           const topHeight = screenHeight - openingWidth / 2 - openingHeight
@@ -419,7 +440,7 @@
               V2(xSpan, -screenHeight)
             ], false))
           }
-          pipe.setLinearVelocity(V2(-6 + randomGauss() / 10, 0))
+          pipe.setLinearVelocity(V2(velocity, 0))
           pipe.render = {fill: 'green', stroke: '#11411a'}
           pipe.xSpan = xSpan
           pipe.openingWidth = openingWidth
@@ -435,7 +456,7 @@
           return pipe.getPosition().x < testbed.width / 2 - pipe.xSpan / 2
         }
 
-        const pipeList = [createPipe(50), createPipe(90)]
+        pipeList.push(createPipe(20), createPipe(60), createPipe(90))
 
         function changeDeadBirdsUI () {
           for (const deadBird of justDiedBirds) {
@@ -465,11 +486,6 @@
         }
 
         const raphaelPaper = Raphael('canvas')
-
-        function displayBest (genome, generationScore) {
-          displayGraph(raphaelPaper, genome, generationScore)
-        }
-
         let species = selectInitialCentroids(SPECIES_COUNT, birds.map(b => b.genome))
 
         function resetSimulation () {
@@ -478,7 +494,7 @@
           let {clusters, centroids, newSizes} = kMeans(graveyard, species)
           species = centroids
           generationScore[generation - 1] = graveyard[0].lifeTime
-          displayBest(graveyard[0].genome, generationScore)
+          displayGraph(raphaelPaper, graveyard[0].genome, generationScore)
           const newBirds = newSizes.map(() => [])
           for (let i = 0; i < SPECIES_COUNT; i++) {
             const previousMembers = clusters[i]
@@ -489,7 +505,7 @@
               const parent2 = pickWeighted(sumLifetimes, birdsByLifetime)
               const parents = [parent1, parent2]
               parents.sort((p1, p2) => p2.lifeTime - p1.lifeTime)
-              const newBird = createBird(parents[0].genome.combine(parents[1].genome))
+              const newBird = createBird(parents[0].genome.combine(parents[1].genome), COLOR[i % COLOR.length])
               newBird.index = birds.length
               newBirds[i].push(newBird)
               birds.push(newBird)
@@ -498,7 +514,7 @@
           for (const pipe of pipeList)
             world.destroyBody(pipe)
           pipeList.length = 0
-          pipeList.push(createPipe(50), createPipe(90))
+          pipeList.push(createPipe(20), createPipe(60), createPipe(95))
           graveyard.length = 0
           globalTime = 0
         }
@@ -548,7 +564,7 @@
             if (pipeList.length && isPipeGoneLeft(pipeList[0]))
               world.destroyBody(pipeList.shift())
             if (pipeList.length && isPipeEnteredRight(pipeList[pipeList.length - 1]))
-              pipeList.push(createPipe(90 + randomGauss() * 10))
+              pipeList.push(createPipe(Math.max(90 + randomGauss() * 10, 20)))
           }
           timeDisplay.innerText = '' + Math.round(globalTime)
           flockSizeDisplay.innerText = '' + birds.length

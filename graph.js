@@ -7,7 +7,7 @@ function displayGraph (paper, genome, generationScore) {
   paper.linechart(30, 0, 400, 180, [...generationScore.keys()], generationScore, chartOpts).attr({
     stroke: 'lightblue'
   })
-  const [forwards, backwards] = computeGraphs(genome.connections, true)
+  const [forwards, backwards] = computeGraphs(genome.connections, false)
   const {orderedNodes, nodeLayers} = topologicalSort(nnInputs, backwards, forwards)
   const maxLayer = nodeLayers[orderedNodes[orderedNodes.length - 1].id]
   const layerInc = 400 / maxLayer
@@ -39,9 +39,10 @@ function displayGraph (paper, genome, generationScore) {
   for (const connection of genome.connections) {
     const pos1 = nodePositions[connection.from.id]
     const pos2 = nodePositions[connection.to.id]
-    if (connection.enabled && pos1 && pos2) {
-      paper.path(`M${105 + pos1.x},${20 + pos1.y}L${90 + pos2.x},${20 + pos2.y}`).attr('stroke', 'grey')
-      paper.text((150 + pos1.x + 50 + pos2.x) / 1.8, (20 + pos1.y + 20 + pos2.y) / 1.8, '' + connection.weight.toFixed(1)).attr('stroke', 'wheat')
+    if (pos1 && pos2) {
+      paper.path(`M${105 + pos1.x},${20 + pos1.y}L${90 + pos2.x},${20 + pos2.y}`).attr('stroke', connection.enabled ? 'lightgrey' : '#444')
+      if (connection.enabled)
+        paper.text((150 + pos1.x + 50 + pos2.x) / 2, (20 + pos1.y + 20 + pos2.y) / 2, '' + connection.weight.toFixed(1)).attr('stroke', 'wheat')
     }
   }
 }
