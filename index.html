@@ -183,6 +183,9 @@
       class Genome {
         constructor (connections) {
           this.connections = connections
+          // if genome is empty, generate a first neuron.
+          if (this.connections.length === 0)
+            this.connections = this.combine(this).connections
         }
 
         // innovation -> gene pseudo map
