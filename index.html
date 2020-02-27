@@ -361,10 +361,13 @@
             filterGroupIndex: -1,
           })
           bird.render = {fill: color, stroke: 'black'}
-          // for a bird completely at the left
-          //bird.setPosition(V2(-45.5, posY))
           // leave a gap behind the bird, forces it to read the position of the 2nd pipe
           bird.setPosition(V2(-25, posY))
+
+          // for a bird completely at the left
+          if (window.location.hash === '#left') {
+            bird.setPosition(V2(-45.5, posY))
+          }
 
           bird.isBird = true
           bird.up = function () {
