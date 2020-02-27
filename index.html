@@ -20,14 +20,14 @@
     <script src="graph.js"></script>
     <script src="species.js"></script>
     <script>
-      const FLOCK_SIZE = 300
+      const FLOCK_SIZE = 400
       const SPECIES_COUNT = 10
-      const TOPO_MUTATION_PROB = 0.1
-      const ADD_NODE_MUTATION_PROB = 0.05
+      const TOPO_MUTATION_PROB = 0.3
+      const ADD_NODE_MUTATION_PROB = 0.2
       const WEIGHT_MUTATION_PROB = 0.1
       const WEIGHT_MUTATION_POWER = 0.1
       const WEIGHT_REPLACEMENT_PROB = 0.001
-      const CONNECTION_TOGGLE_PROB = 0.005
+      const CONNECTION_TOGGLE_PROB = 0.01
 
       //species
       const C1 = 1
@@ -234,7 +234,7 @@
               }
             } else {
               // predicates force empty gene to get a first link
-              if (newGenome.length && Math.random() < 0.5) {
+              if (newGenome.length && Math.random() < 0.25) {
                 // deleteLink mutation
                 const links = newGenome.filter(g => g != null)
                 delete links[Math.floor(Math.random() * links.length)]
@@ -304,8 +304,7 @@
           ['birdVelY', (bird, _pipeList) => bird.getLinearVelocity().y],
           ['pipeHoleY', (bird, pipeList) => pipeList[0].openingHeight],
           ['pipeX', (bird, pipeList) => pipeList[0].getWorldCenter().x],
-          ['pipe2HoleY', (bird, pipeList) => pipeList[1].openingHeight],
-          ['pipe2X', (bird, pipeList) => pipeList[1].getWorldCenter().x],
+          ['pipe2HoleY', (bird, pipeList) => pipeList[1] && pipeList[1].openingHeight],
           ['bias', (_bird, _pipeList) => 1]
         ]
         return inputs.map(input => {
@@ -334,7 +333,6 @@
         const V2 = planck.Vec2
         // the many states of death
         const justDiedBirds = []
-        const deadBirds = []
         const graveyard = []
 
         const world = new planck.World({
@@ -366,12 +364,7 @@
           // for a bird completely at the left
           //bird.setPosition(V2(-45.5, posY))
           // leave a gap behind the bird, forces it to read the position of the 2nd pipe
-          // bird.setPosition(V2(-25, posY))
-          // get the bird more and more to the right over the generations
-          const ratio = Math.min(generation / 500, 1)
-          const minX = -25
-          const maxX = -45.5
-          bird.setPosition(V2(maxX - (maxX - minX) * ratio, posY))
+          bird.setPosition(V2(-25, posY))
 
           bird.isBird = true
           bird.up = function () {
@@ -409,20 +402,20 @@
           const screenHeight = height / 2
           const openingWidth = 6// Math.max(randomGauss() * 30 + 8, 6)
           const openingHeight = Math.random() * (height - openingWidth) - screenHeight + openingWidth / 2
-          let velocity = -6 + randomGauss() / 15
+          const xSpan = 6
+          let velocity = randomGauss(-6, 0.05)
           if (pipeList.length) {
             const previousPipe = pipeList[pipeList.length - 1]
             const previousHeight = previousPipe.openingHeight
             const deltaY = Math.abs(previousHeight - openingHeight)
             const previousX = previousPipe.getWorldCenter().x
-            let safeX = previousX + deltaY
+            let safeX = previousX + xSpan + deltaY * 1.5
             if (xPos < safeX) {
               xPos = Math.max(xPos, safeX)
               velocity = previousPipe.getLinearVelocity().x
             }
           }
           const pipe = world.createKinematicBody(V2(xPos, 0))
-          const xSpan = 6
           const topHeight = screenHeight - openingWidth / 2 - openingHeight
           if (topHeight > 0) {
             pipe.createFixture(planck.Chain([
@@ -456,28 +449,15 @@
           return pipe.getPosition().x < testbed.width / 2 - pipe.xSpan / 2
         }
 
-        pipeList.push(createPipe(20), createPipe(60), createPipe(90))
+        pipeList.push(createPipe(20), createPipe(80))
+        let currentPipeDistAverage = 120
 
-        function changeDeadBirdsUI () {
-          for (const deadBird of justDiedBirds) {
-            deadBird.render = {fill: 'red'}
-            deadBird.getFixtureList().ui.remove()
-            deadBird.getFixtureList().ui = null
-            deadBird.setAngle(-Math.PI / 3)
-            deadBirds.push(deadBird)
-          }
+        function removeDeadBirds () {
+          if (justDiedBirds.length)
+            flockSizeDisplay.innerText = '' + birds.length
+          for (const bird of justDiedBirds)
+            world.destroyBody(bird)
           justDiedBirds.length = 0
-        }
-
-        function removeTimedoutDeadBirds () {
-          for (let i = 0; i < deadBirds.length; i++) {
-            let deadBird = deadBirds[i]
-            if (deadBird.lifeTime + 100 < globalTime) {
-              world.destroyBody(deadBird)
-              deadBirds.splice(i, 1)
-              i--
-            }
-          }
         }
 
         function pickWeighted (sum, array) {
@@ -491,11 +471,17 @@
         function resetSimulation () {
           generationDisplay.innerText = '' + generation
           graveyard.sort((a, b) => b.lifeTime - a.lifeTime)
+          console.log('generation', generation, graveyard[Math.floor(graveyard.length * 0.1)].lifeTime)
+          if (graveyard[Math.floor(graveyard.length * 0.2)].lifeTime > 30000) {
+            currentPipeDistAverage -= 3
+            console.log('increasing difficulty', currentPipeDistAverage)
+          }
           let {clusters, centroids, newSizes} = kMeans(graveyard, species)
           species = centroids
           generationScore[generation - 1] = graveyard[0].lifeTime
           displayGraph(raphaelPaper, graveyard[0].genome, generationScore)
           const newBirds = newSizes.map(() => [])
+          const speciesScore = []
           for (let i = 0; i < SPECIES_COUNT; i++) {
             const previousMembers = clusters[i]
             let sumLifetimes = 0
@@ -514,7 +500,7 @@
           for (const pipe of pipeList)
             world.destroyBody(pipe)
           pipeList.length = 0
-          pipeList.push(createPipe(20), createPipe(60), createPipe(95))
+          pipeList.push(createPipe(20), createPipe(80))
           graveyard.length = 0
           globalTime = 0
         }
@@ -531,31 +517,27 @@
         world.on('begin-contact', function (contact) {
           const fixtureA = contact.getFixtureA()
           const fixtureB = contact.getFixtureB()
-          if (fixtureA.getBody().isBird) {
+          if (fixtureA.getBody().isBird)
             kill(fixtureA.getBody())
-          } else if (fixtureB.getBody().isBird)
+          else if (fixtureB.getBody().isBird)
             kill(fixtureB.getBody())
         })
 
         const timeDisplay = document.getElementById('time')
         const flockSizeDisplay = document.getElementById('flockSize')
         const generationDisplay = document.getElementById('generation')
+        const avgPipesDisplay = document.getElementById('avgPipes')
         testbed.step = function (dt) {
           globalTime += dt
-          changeDeadBirdsUI()
-          removeTimedoutDeadBirds()
+          removeDeadBirds()
           if (!birds.length) {
-            if (justDiedBirds.length === 0 && deadBirds.length === 0) {
-              generation++
-              try {
-                resetSimulation()
-              } catch (e) {
-                testbed.pause()
-                return
-              }
-            } else
-              for (const currentPipe of pipeList)
-                currentPipe.setLinearVelocity(V2(0, 0))
+            generation++
+            try {
+              resetSimulation()
+            } catch (e) {
+              testbed.pause()
+              return
+            }
           } else {
             for (const bird of birds) {
               bird.policy()
@@ -563,11 +545,13 @@
             }
             if (pipeList.length && isPipeGoneLeft(pipeList[0]))
               world.destroyBody(pipeList.shift())
-            if (pipeList.length && isPipeEnteredRight(pipeList[pipeList.length - 1]))
-              pipeList.push(createPipe(Math.max(90 + randomGauss() * 10, 20)))
+            if (pipeList.length && isPipeEnteredRight(pipeList[pipeList.length - 1])) {
+              let pipeDiff = Math.round(currentPipeDistAverage - globalTime / 10000)
+              avgPipesDisplay.innerText = '' + pipeDiff
+              pipeList.push(createPipe(Math.max(randomGauss(pipeDiff, 10), 20)))
+            }
           }
           timeDisplay.innerText = '' + Math.round(globalTime)
-          flockSizeDisplay.innerText = '' + birds.length
         }
         return world
       })
@@ -580,6 +564,7 @@
             <th style="width: 5em">Time</th>
             <th style="width: 5em">Flock size</th>
             <th style="width: 5em">Generation</th>
+            <th style="width: 5em">Avg pipes</th>
         </tr>
         </thead>
         <tbody>
@@ -587,6 +572,7 @@
             <td id="time"></td>
             <td id="flockSize"></td>
             <td id="generation">1</td>
+            <td id="avgPipes"></td>
         </tr>
         </tbody>
     </table>
